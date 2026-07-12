@@ -136,6 +136,12 @@ def to_base(amount: Decimal, currency: str, base: str, usdinr: float | None) -> 
     return None
 
 
+def to_base_f(amount: float, currency: str, base: str, usdinr: float | None) -> float | None:
+    """Float variant of to_base for aggregate/weight math."""
+    converted = to_base(Decimal(str(amount)), currency, base, usdinr)
+    return float(converted) if converted is not None else None
+
+
 # -- XIRR ----------------------------------------------------------------------
 
 def xirr(cashflows: list[tuple[date, float]], guess: float = 0.1) -> float | None:
@@ -188,27 +194,43 @@ def xirr(cashflows: list[tuple[date, float]], guess: float = 0.1) -> float | Non
 
 
 def portfolio_xirr(db: Session, holdings: dict[int, Holding],
-                   prices: dict[int, tuple[date, float]]) -> float | None:
+                   prices: dict[int, tuple[date, float]],
+                   base: str = "INR", usdinr: float | None = None) -> float | None:
     """XIRR over all instrument cashflows plus current value as terminal inflow.
-    Computed in native currency terms per transaction; mixed-currency portfolios
-    get an approximation (documented limitation until FX-dated conversion lands)."""
+    Flows are converted to the base currency at the latest FX rate (an
+    approximation vs trade-date rates, but sign- and magnitude-correct);
+    instruments whose currency cannot be converted are excluded entirely."""
+    if usdinr is None:
+        usdinr = latest_fx(db)
     txns = db.execute(
-        select(Transaction).where(Transaction.instrument_id.isnot(None))
+        select(Transaction)
+        .where(Transaction.instrument_id.isnot(None))
+        .options(joinedload(Transaction.instrument))
     ).scalars().all()
     flows: list[tuple[date, float]] = []
+    skipped_instruments: set[int] = set()
     for t in txns:
+        ccy = t.instrument.currency
         if t.type == "buy":
-            cost = (t.quantity or ZERO) * (t.price or ZERO) + (t.fees or ZERO)
-            flows.append((t.trade_date, -float(cost)))
+            native = -float((t.quantity or ZERO) * (t.price or ZERO) + (t.fees or ZERO))
         elif t.type == "sell":
-            proceeds = (t.quantity or ZERO) * (t.price or ZERO) - (t.fees or ZERO)
-            flows.append((t.trade_date, float(proceeds)))
+            native = float((t.quantity or ZERO) * (t.price or ZERO) - (t.fees or ZERO))
         elif t.type == "dividend":
-            flows.append((t.trade_date, float(t.amount or ZERO)))
+            native = float(t.amount or ZERO)
+        else:
+            continue
+        converted = to_base_f(native, ccy, base, usdinr)
+        if converted is None:
+            skipped_instruments.add(t.instrument_id)
+            continue
+        flows.append((t.trade_date, converted))
     current_value = 0.0
     for iid, h in holdings.items():
-        if iid in prices and h.quantity > 0:
-            current_value += float(h.quantity) * prices[iid][1]
+        if iid in prices and h.quantity > 0 and iid not in skipped_instruments:
+            value = to_base_f(float(h.quantity) * prices[iid][1],
+                              h.instrument.currency, base, usdinr)
+            if value is not None:
+                current_value += value
     if current_value > 0:
         flows.append((date.today(), current_value))
     return xirr(flows)

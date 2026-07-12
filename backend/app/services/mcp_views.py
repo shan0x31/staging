@@ -35,6 +35,8 @@ def portfolio_summary_view(db: Session) -> dict:
     private = privacy_on(db)
     holdings = psvc.build_holdings(db)
     prices = psvc.latest_prices(db, list(holdings.keys()))
+    usdinr = psvc.latest_fx(db)
+    base = "INR"
 
     total = 0.0
     invested = 0.0
@@ -44,15 +46,21 @@ def portfolio_summary_view(db: Session) -> dict:
     for iid, h in holdings.items():
         if h.quantity <= 0 or iid not in prices:
             continue
-        v = float(h.quantity) * prices[iid][1]
+        v = psvc.to_base_f(float(h.quantity) * prices[iid][1],
+                           h.instrument.currency, base, usdinr)
+        inv = psvc.to_base_f(float(h.invested), h.instrument.currency, base, usdinr)
+        if v is None or inv is None:
+            continue
         total += v
-        invested += float(h.invested)
+        invested += inv
         by_class[h.instrument.asset_class] = by_class.get(h.instrument.asset_class, 0) + v
         by_ccy[h.instrument.currency] = by_ccy.get(h.instrument.currency, 0) + v
         sector = h.instrument.sector or "Unclassified"
         by_sector[sector] = by_sector.get(sector, 0) + v
     for asset in psvc.manual_assets_total(db):
-        v = float(asset.current_value)
+        v = psvc.to_base_f(float(asset.current_value), asset.currency, base, usdinr)
+        if v is None:
+            continue
         total += v
         by_class[asset.asset_class] = by_class.get(asset.asset_class, 0) + v
         by_ccy[asset.currency] = by_ccy.get(asset.currency, 0) + v
@@ -61,7 +69,7 @@ def portfolio_summary_view(db: Session) -> dict:
         s = sum(d.values())
         return {k: round(v / s * 100, 1) for k, v in sorted(d.items(), key=lambda kv: -kv[1])} if s else {}
 
-    rate = psvc.portfolio_xirr(db, holdings, prices)
+    rate = psvc.portfolio_xirr(db, holdings, prices, base=base, usdinr=usdinr)
     out: dict = {
         "privacy_mode": private,
         "positions": sum(1 for h in holdings.values() if h.quantity > 0),
@@ -82,8 +90,16 @@ def holdings_view(db: Session) -> list[dict]:
     private = privacy_on(db)
     holdings = psvc.build_holdings(db)
     prices = psvc.latest_prices(db, list(holdings.keys()))
-    total = sum(float(h.quantity) * prices[i][1]
-                for i, h in holdings.items() if h.quantity > 0 and i in prices)
+    usdinr = psvc.latest_fx(db)
+
+    def base_value(iid: int, h) -> float | None:
+        if h.quantity <= 0 or iid not in prices:
+            return None
+        return psvc.to_base_f(float(h.quantity) * prices[iid][1],
+                              h.instrument.currency, "INR", usdinr)
+
+    values = {i: v for i, h in holdings.items() if (v := base_value(i, h)) is not None}
+    total = sum(values.values())
     rows = []
     for iid, h in holdings.items():
         if h.quantity <= 0:
@@ -96,9 +112,10 @@ def holdings_view(db: Session) -> list[dict]:
             "currency": h.instrument.currency,
         }
         if iid in prices:
-            value = float(h.quantity) * prices[iid][1]
+            value = float(h.quantity) * prices[iid][1]  # native ccy for P&L pct
             invested = float(h.invested)
-            row["weight_pct"] = round(value / total * 100, 2) if total else None
+            row["weight_pct"] = (
+                round(values[iid] / total * 100, 2) if total and iid in values else None)
             row["unrealized_pnl_pct"] = (
                 round((value - invested) / invested * 100, 2) if invested else None)
             row["price_date"] = str(prices[iid][0])

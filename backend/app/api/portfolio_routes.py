@@ -108,7 +108,7 @@ def get_summary(db: Session = Depends(get_db), _: User = Depends(require_unlocke
         s = sum(d.values())
         return {k: round(v / s * 100, 2) for k, v in d.items()} if s else {}
 
-    rate = svc.portfolio_xirr(db, holdings, prices)
+    rate = svc.portfolio_xirr(db, holdings, prices, base=base, usdinr=usdinr)
     unrealized_total = (equity_value - invested_total) if not conversion_gap and priced else None
     return PortfolioSummary(
         base_currency=base,

@@ -12,7 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ...models.auth import Setting
-from ..portfolio import Holding
+from ..portfolio import Holding, to_base_f
 
 SINGLE_STOCK_LIMIT_PCT = 15.0
 SECTOR_LIMIT_PCT = 30.0
@@ -39,16 +39,23 @@ def _get_setting(db: Session, key: str) -> dict | None:
 
 
 def _values(holdings: dict[int, Holding],
-            prices: dict[int, tuple[date, float]]) -> dict[int, float]:
+            prices: dict[int, tuple[date, float]],
+            usdinr: float | None = None, base: str = "INR") -> dict[int, float]:
+    """Position values converted to the base currency so weights are comparable
+    across INR/USD holdings. Unconvertible currencies are excluded from weights."""
     out = {}
     for iid, h in holdings.items():
         if h.quantity > 0 and iid in prices:
-            out[iid] = float(h.quantity) * prices[iid][1]
+            converted = to_base_f(float(h.quantity) * prices[iid][1],
+                                  h.instrument.currency, base, usdinr)
+            if converted is not None:
+                out[iid] = converted
     return out
 
 
-def check_concentration(holdings, prices) -> list[RecoDraft]:
-    values = _values(holdings, prices)
+def check_concentration(holdings, prices, usdinr: float | None = None,
+                        base: str = "INR") -> list[RecoDraft]:
+    values = _values(holdings, prices, usdinr, base)
     total = sum(values.values())
     drafts: list[RecoDraft] = []
     if total <= 0:
@@ -87,8 +94,9 @@ def check_concentration(holdings, prices) -> list[RecoDraft]:
     return drafts
 
 
-def check_currency_exposure(holdings, prices) -> list[RecoDraft]:
-    values = _values(holdings, prices)
+def check_currency_exposure(holdings, prices, usdinr: float | None = None,
+                            base: str = "INR") -> list[RecoDraft]:
+    values = _values(holdings, prices, usdinr, base)
     total = sum(values.values())
     if total <= 0:
         return []
@@ -96,8 +104,6 @@ def check_currency_exposure(holdings, prices) -> list[RecoDraft]:
     for iid, value in values.items():
         ccy = holdings[iid].instrument.currency
         by_ccy[ccy] = by_ccy.get(ccy, 0) + value
-    # Note: mixed-currency totals here are approximate (native sums); the
-    # point of the rule is the imbalance, which survives the approximation.
     for ccy, value in by_ccy.items():
         pct = value / total * 100
         if pct > SINGLE_CURRENCY_INFO_PCT and len(by_ccy) >= 1:
