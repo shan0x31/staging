@@ -5,6 +5,7 @@ import Dashboard from "./pages/Dashboard";
 import Holdings from "./pages/Holdings";
 import Login from "./pages/Login";
 import Recommendations from "./pages/Recommendations";
+import Reports from "./pages/Reports";
 import Settings from "./pages/Settings";
 import Transactions from "./pages/Transactions";
 
@@ -60,6 +61,7 @@ export default function App() {
         <NavLink to="/holdings">Holdings</NavLink>
         <NavLink to="/transactions">Transactions</NavLink>
         <NavLink to="/recommendations">Recommendations</NavLink>
+        <NavLink to="/reports">Reports</NavLink>
         <NavLink to="/settings">Settings</NavLink>
         <a onClick={logout} style={{ cursor: "pointer", marginTop: 20 }}>Sign out</a>
       </nav>
@@ -69,6 +71,7 @@ export default function App() {
           <Route path="/holdings" element={<Holdings />} />
           <Route path="/transactions" element={<Transactions />} />
           <Route path="/recommendations" element={<Recommendations />} />
+          <Route path="/reports" element={<Reports />} />
           <Route path="/settings" element={<Settings onLocked={refreshStatus} />} />
           <Route path="*" element={<Navigate to="/" />} />
         </Routes>

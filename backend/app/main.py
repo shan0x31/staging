@@ -13,6 +13,7 @@ from .api.market_routes import router as market_router
 from .api.portfolio_routes import router as portfolio_router
 from .api.reco_routes import router as reco_router
 from .api.reco_routes import settings_router
+from .api.report_routes import router as report_router
 from .auth.routes import router as auth_router
 from .config import settings
 from .crypto.keys import key_manager
@@ -56,6 +57,7 @@ def create_app() -> FastAPI:
     app.include_router(market_router)
     app.include_router(reco_router)
     app.include_router(settings_router)
+    app.include_router(report_router)
 
     @app.get("/health")
     def health() -> dict:

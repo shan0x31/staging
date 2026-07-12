@@ -56,10 +56,15 @@ export default function Transactions() {
         <input ref={fileInput} type="file" accept=".csv" onChange={onUpload} style={{ display: "none" }} />
         <button className="ghost" onClick={() => fileInput.current?.click()}>Import CSV</button>
         <button className="ghost" onClick={downloadTemplate}>Download template</button>
+        <span className="hint">
+          Auto-detects Zerodha tradebook, Groww tradebook, and US-broker activity
+          CSVs, plus the generic template.
+        </span>
       </div>
       {importResult && (
         <div className="card">
-          <b>Import result:</b> {importResult.imported} imported,{" "}
+          <b>Import result</b> ({importResult.detected_format} format):{" "}
+          {importResult.imported} imported,{" "}
           {importResult.skipped_duplicates} duplicates skipped
           {importResult.errors.length > 0 && (
             <ul>{importResult.errors.map((e, i) => <li key={i} className="error">{e}</li>)}</ul>

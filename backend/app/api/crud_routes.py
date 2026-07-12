@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from ..db import get_db
 from ..models.auth import AuditLog, User
 from ..models.portfolio import Account, Instrument, ManualAsset, Transaction
-from ..services.importer import import_generic_csv
+from ..services.importer import import_csv
 from .deps import require_unlocked
 from .schemas import (
     AccountIn, AccountOut, ImportSummary, InstrumentIn, InstrumentOut,
@@ -145,18 +145,27 @@ def delete_transaction(txn_id: int, db: Session = Depends(get_db),
 
 
 @transactions_router.post("/import", response_model=ImportSummary)
-async def import_csv(file: UploadFile, skip_duplicates: bool = True,
-                     db: Session = Depends(get_db), _: User = Depends(require_unlocked)):
+async def import_transactions_csv(
+    file: UploadFile,
+    skip_duplicates: bool = True,
+    format: str | None = None,   # zerodha | groww | us_broker | generic; None = auto
+    account: str | None = None,  # override account name for broker imports
+    db: Session = Depends(get_db),
+    _: User = Depends(require_unlocked),
+):
     content = await file.read()
     if len(content) > 10 * 1024 * 1024:
         raise HTTPException(413, "File too large (10 MB limit)")
-    result = import_generic_csv(db, content, skip_duplicates=skip_duplicates)
+    result = import_csv(db, content, fmt=format, skip_duplicates=skip_duplicates,
+                        account=account)
     db.add(AuditLog(actor="web", action="import.csv",
-                    detail=f"batch={result.batch_id} imported={result.imported} "
+                    detail=f"batch={result.batch_id} format={result.detected_format} "
+                           f"imported={result.imported} "
                            f"dupes={result.skipped_duplicates} errors={len(result.errors)}"))
     db.commit()
     return ImportSummary(batch_id=result.batch_id, imported=result.imported,
-                         skipped_duplicates=result.skipped_duplicates, errors=result.errors)
+                         skipped_duplicates=result.skipped_duplicates,
+                         errors=result.errors, detected_format=result.detected_format)
 
 
 # -- manual assets -----------------------------------------------------------------

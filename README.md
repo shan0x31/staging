@@ -15,7 +15,12 @@ See [PLAN.md](PLAN.md) for the full architecture and roadmap.
 - **Transaction ledger** → FIFO lots, average cost (fees capitalized), realized/unrealized
   P&L, dividends, splits/bonuses, XIRR — INR/USD aware with automatic FX conversion.
 - **CSV import** with account/instrument auto-creation, duplicate detection, and per-row
-  error reporting (template downloadable in the UI).
+  error reporting (template downloadable in the UI). **Broker exports auto-detected**:
+  Zerodha Console tradebook, Groww tradebook, and US-broker activity files
+  (Fidelity/Schwab style) — all normalized into the same ledger.
+- **Tax reports**: realized capital gains per Indian FY (12-month LTCG boundary,
+  per-lot FIFO detail, ₹1.25L exemption context) or US calendar year, plus dividend
+  income summaries. Informational, not tax advice.
 - **Market data on a schedule**: NSE/BSE + US equities and USD/INR via Yahoo (EOD),
   Indian MF NAVs via AMFI — refreshed weekdays at 18:30 IST / 17:30 ET.
 - **Recommendation engine** (weekly + on-demand): concentration and allocation-drift
@@ -96,6 +101,10 @@ Header: `date,type,symbol,name,exchange,asset_class,quantity,price,fees,amount,c
 
 Symbols are provider-ready: `RELIANCE.NS` (NSE), `TCS.BO` (BSE), `AAPL` (US),
 `MF:120503` (AMFI scheme code for Indian mutual funds).
+
+Broker exports need no template — upload the file as-is and the format is detected
+from its headers (`?format=zerodha|groww|us_broker` forces it; `?account=` names
+the target account).
 
 ## Development
 

@@ -32,6 +32,7 @@ class ImportResult:
     imported: int = 0
     skipped_duplicates: int = 0
     errors: list[str] = field(default_factory=list)
+    detected_format: str = "generic"
 
 
 def _parse_date(value: str) -> date:
@@ -113,6 +114,36 @@ def _is_duplicate(db: Session, account_id: int, instrument_id: int | None,
     return False
 
 
+def import_csv(db: Session, content: bytes | str, fmt: str | None = None,
+               skip_duplicates: bool = True, account: str | None = None) -> ImportResult:
+    """Import any supported CSV. Broker formats (Zerodha/Groww/US-broker) are
+    auto-detected from the header signature and normalized into generic rows."""
+    from .broker_formats import PARSERS, detect_format
+
+    text = content.decode("utf-8-sig") if isinstance(content, bytes) else content
+    header_reader = csv.reader(io.StringIO(text))
+    try:
+        headers = next(header_reader)
+    except StopIteration:
+        return ImportResult(batch_id="", errors=["Empty file"])
+
+    detected = fmt or detect_format(headers)
+    if detected == "unknown":
+        return ImportResult(batch_id="", errors=[
+            "Unrecognized CSV format. Use the generic template or a supported "
+            "broker export (Zerodha tradebook, Groww tradebook, US broker activity)."])
+    if detected == "generic":
+        result = import_generic_csv(db, text, skip_duplicates=skip_duplicates)
+        result.detected_format = "generic"
+        return result
+
+    parser = PARSERS[detected]
+    rows = parser(text, account=account) if account else parser(text)
+    result = ImportResult(batch_id=str(uuid.uuid4()), detected_format=detected)
+    _import_rows(db, rows, result, skip_duplicates)
+    return result
+
+
 def import_generic_csv(db: Session, content: bytes | str,
                        skip_duplicates: bool = True) -> ImportResult:
     text = content.decode("utf-8-sig") if isinstance(content, bytes) else content
@@ -126,7 +157,12 @@ def import_generic_csv(db: Session, content: bytes | str,
         return ImportResult(batch_id="", errors=[f"Missing columns: {sorted(missing)}"])
 
     result = ImportResult(batch_id=str(uuid.uuid4()))
-    for lineno, row in enumerate(reader, start=2):
+    _import_rows(db, reader, result, skip_duplicates)
+    return result
+
+
+def _import_rows(db: Session, rows, result: ImportResult, skip_duplicates: bool) -> None:
+    for lineno, row in enumerate(rows, start=2):
         try:
             txn_type = (row.get("type") or "").strip().lower()
             if txn_type not in TXN_TYPES:
@@ -173,4 +209,3 @@ def import_generic_csv(db: Session, content: bytes | str,
         except ValueError as exc:
             result.errors.append(f"line {lineno}: {exc}")
     db.commit()
-    return result

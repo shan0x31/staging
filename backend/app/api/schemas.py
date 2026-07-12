@@ -129,3 +129,4 @@ class ImportSummary(BaseModel):
     imported: int
     skipped_duplicates: int
     errors: list[str]
+    detected_format: str = "generic"

@@ -86,4 +86,7 @@ export interface Reco {
   title: string; rationale: string; data: Record<string, unknown> | null; dismissed: boolean;
 }
 export interface Mover { symbol: string; name: string; close: number; prev_close: number; change_pct: number }
-export interface ImportSummary { batch_id: string; imported: number; skipped_duplicates: number; errors: string[] }
+export interface ImportSummary {
+  batch_id: string; imported: number; skipped_duplicates: number;
+  errors: string[]; detected_format: string;
+}

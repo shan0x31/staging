@@ -27,12 +27,45 @@ class Lot:
 
 
 @dataclass
+class SaleRecord:
+    """One FIFO lot consumption by a sell — the atom of capital-gains reporting."""
+    instrument: Instrument
+    quantity: Decimal
+    sell_date: date
+    sell_price: Decimal
+    acquire_date: date
+    unit_cost: Decimal
+
+    @property
+    def proceeds(self) -> Decimal:
+        return self.quantity * self.sell_price
+
+    @property
+    def cost(self) -> Decimal:
+        return self.quantity * self.unit_cost
+
+    @property
+    def gain(self) -> Decimal:
+        return self.proceeds - self.cost
+
+    @property
+    def holding_days(self) -> int:
+        return (self.sell_date - self.acquire_date).days
+
+    @property
+    def long_term(self) -> bool:
+        # India listed equity/ETF/MF(equity): >12 months. US: >1 year. Same boundary.
+        return self.holding_days > 365
+
+
+@dataclass
 class Holding:
     instrument: Instrument
     lots: list[Lot] = field(default_factory=list)
     realized_pnl: Decimal = ZERO
     dividends: Decimal = ZERO
     fees: Decimal = ZERO
+    sales: list[SaleRecord] = field(default_factory=list)
 
     @property
     def quantity(self) -> Decimal:
@@ -77,6 +110,10 @@ def build_holdings(db: Session) -> dict[int, Holding]:
                 lot = h.lots[0]
                 take = min(lot.quantity, remaining)
                 h.realized_pnl += take * (proceeds_per_share - lot.unit_cost)
+                h.sales.append(SaleRecord(
+                    instrument=t.instrument, quantity=take,
+                    sell_date=t.trade_date, sell_price=proceeds_per_share,
+                    acquire_date=lot.acquired, unit_cost=lot.unit_cost))
                 lot.quantity -= take
                 remaining -= take
                 if lot.quantity == 0:
@@ -85,6 +122,10 @@ def build_holdings(db: Session) -> dict[int, Holding]:
                 # Oversell: ledger incomplete (missing buys). Record P&L on
                 # zero-cost basis rather than crash; surfaced via notes/audit later.
                 h.realized_pnl += remaining * proceeds_per_share
+                h.sales.append(SaleRecord(
+                    instrument=t.instrument, quantity=remaining,
+                    sell_date=t.trade_date, sell_price=proceeds_per_share,
+                    acquire_date=t.trade_date, unit_cost=ZERO))
         elif t.type == "split":
             factor = t.quantity or Decimal(1)
             if factor <= 0:
