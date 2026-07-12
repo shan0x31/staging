@@ -1,0 +1,43 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: pf
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set in .env}
+      POSTGRES_DB: pf
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pf"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    # Not exposed to the host: DB traffic stays on the private compose network.
+
+  api:
+    build: ./backend
+    environment:
+      PF_DATABASE_URL: postgresql+psycopg2://pf:${POSTGRES_PASSWORD}@db:5432/pf
+      # Optional: auto-unlock at startup so scheduled jobs (price refresh,
+      # weekly recommendations) run unattended. Omit to unlock via the UI
+      # after each restart instead — more secure, less automatic.
+      PF_PASSPHRASE: ${PF_PASSPHRASE:-}
+      PF_BASE_CURRENCY: ${PF_BASE_CURRENCY:-INR}
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  web:
+    build: ./frontend
+    environment:
+      DOMAIN: ${DOMAIN:-localhost}
+    ports:
+      - "443:443"
+      - "80:80"
+    depends_on:
+      - api
+    restart: unless-stopped
+
+volumes:
+  pgdata:
