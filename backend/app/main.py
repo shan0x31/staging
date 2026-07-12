@@ -3,6 +3,13 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from .api.crud_routes import (
+    accounts_router,
+    instruments_router,
+    manual_assets_router,
+    transactions_router,
+)
+from .api.portfolio_routes import router as portfolio_router
 from .auth.routes import router as auth_router
 from .config import settings
 from .crypto.keys import key_manager
@@ -30,6 +37,11 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
     app.include_router(auth_router)
+    app.include_router(accounts_router)
+    app.include_router(instruments_router)
+    app.include_router(transactions_router)
+    app.include_router(manual_assets_router)
+    app.include_router(portfolio_router)
 
     @app.get("/health")
     def health() -> dict:
