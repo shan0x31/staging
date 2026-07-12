@@ -9,6 +9,7 @@ from .api.crud_routes import (
     manual_assets_router,
     transactions_router,
 )
+from .api.market_routes import router as market_router
 from .api.portfolio_routes import router as portfolio_router
 from .auth.routes import router as auth_router
 from .config import settings
@@ -23,7 +24,15 @@ async def lifespan(app: FastAPI):
         with SessionLocal() as db:
             if key_manager.is_initialized(db):
                 key_manager.unlock(db, settings.passphrase)
+    if settings.scheduler_enabled:
+        from .services.scheduler import start_scheduler
+
+        start_scheduler()
     yield
+    if settings.scheduler_enabled:
+        from .services.scheduler import stop_scheduler
+
+        stop_scheduler()
     key_manager.lock()
 
 
@@ -42,6 +51,7 @@ def create_app() -> FastAPI:
     app.include_router(transactions_router)
     app.include_router(manual_assets_router)
     app.include_router(portfolio_router)
+    app.include_router(market_router)
 
     @app.get("/health")
     def health() -> dict:

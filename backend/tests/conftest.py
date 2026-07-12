@@ -50,6 +50,9 @@ def reset_rate_limiter():
 @pytest.fixture()
 def client(db_engine, monkeypatch):
     """TestClient wired to the in-memory DB."""
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "scheduler_enabled", False)
     TestSession = sessionmaker(bind=db_engine, autoflush=False, expire_on_commit=False)
     monkeypatch.setattr(app_db, "engine", db_engine)
     monkeypatch.setattr(app_db, "SessionLocal", TestSession)
